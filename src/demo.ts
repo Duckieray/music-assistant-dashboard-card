@@ -1,4 +1,4 @@
-import "./music-assistant-dashboard-card";
+import "./index";
 import type { MusicAssistantDashboardCard } from "./music-assistant-dashboard-card";
 
 const root = document.querySelector<HTMLDivElement>("#app");
