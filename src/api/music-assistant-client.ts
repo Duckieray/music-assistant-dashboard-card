@@ -51,6 +51,7 @@ export class MusicAssistantClient {
   private connectResolve?: () => void;
   private connectReject?: (reason: unknown) => void;
   private connectPromise?: Promise<void>;
+  private queueCache = new Map<string, PlayerQueue>();
 
   state: ClientState = "disconnected";
   serverInfo?: ServerInfoMessage;
@@ -98,6 +99,7 @@ export class MusicAssistantClient {
     this.rejectPending(new Error("Music Assistant connection closed"));
     this.ws?.close();
     this.ws = undefined;
+    this.queueCache.clear();
     this.connectPromise = undefined;
     this.connectResolve = undefined;
     this.connectReject = undefined;
@@ -147,6 +149,17 @@ export class MusicAssistantClient {
 
     if ("event" in message) {
       const event = message as unknown as MassEvent;
+      // MA sends the complete PlayerQueue in queue_updated events. Mutate the cached
+      // object in place so consumers holding references immediately see new index/state/
+      // shuffle/repeat values before they refetch queue items.
+      if (event.event === "queue_updated" && event.data && typeof event.data === "object") {
+        const updated = event.data as PlayerQueue;
+        if (updated.queue_id) {
+          const cached = this.queueCache.get(updated.queue_id);
+          if (cached) Object.assign(cached, updated);
+          else this.queueCache.set(updated.queue_id, updated);
+        }
+      }
       for (const handler of this.eventHandlers) handler(event);
       return;
     }
@@ -225,8 +238,11 @@ export class MusicAssistantClient {
     return this.sendCommand("players/all");
   }
 
-  getQueues(): Promise<PlayerQueue[]> {
-    return this.sendCommand("player_queues/all");
+  async getQueues(): Promise<PlayerQueue[]> {
+    const queues = await this.sendCommand<PlayerQueue[]>("player_queues/all");
+    this.queueCache.clear();
+    for (const queue of queues) this.queueCache.set(queue.queue_id, queue);
+    return queues;
   }
 
   getQueueItems(queueId: string, limit = 500): Promise<QueueItem[]> {
