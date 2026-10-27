@@ -7,6 +7,9 @@ export interface Player {
   volume: number;
   active: boolean;
   grouped: boolean;
+  available?: boolean;
+  syncedTo?: string | null;
+  groupMembers?: string[];
 }
 
 export interface Track {
@@ -17,6 +20,10 @@ export interface Track {
   duration: string;
   accent: string;
   secondary: string;
+  durationSeconds?: number;
+  queueIndex?: number;
+  queueItemId?: string;
+  imageUrl?: string;
 }
 
 export interface MediaItem {
@@ -33,6 +40,12 @@ export interface DashboardConfig {
   title?: string;
   demo?: boolean;
   default_player?: string;
+  /** Music Assistant server address. Accepts http(s)://host:port or ws(s)://host:port/ws. */
+  server_url?: string;
+  /** Compatibility alias for server_url. */
+  url?: string;
+  /** Music Assistant access token created under Settings → Authentication. */
+  token?: string;
 }
 
 export interface HomeAssistantLike {
