@@ -10,6 +10,7 @@ export interface Player {
   available?: boolean;
   syncedTo?: string | null;
   groupMembers?: string[];
+  canGroupWith?: string[];
 }
 
 export interface Track {
