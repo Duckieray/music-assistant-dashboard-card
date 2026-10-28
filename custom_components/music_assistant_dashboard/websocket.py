@@ -13,6 +13,17 @@ from homeassistant.core import HomeAssistant, callback
 from .const import DATA_ENTRIES, DATA_WS_REGISTERED, DOMAIN
 
 
+LIBRARY_COMMANDS = {
+    "album": "music/albums/library_items",
+    "artist": "music/artists/library_items",
+    "track": "music/tracks/library_items",
+    "playlist": "music/playlists/library_items",
+    "radio": "music/radios/library_items",
+}
+
+SEARCH_MEDIA_TYPES = ["artist", "album", "track", "playlist", "radio"]
+RECENT_MEDIA_TYPES = ["track", "album", "playlist", "radio"]
+
 COMMANDS: dict[str, tuple[str, set[str], set[str]]] = {
     "play_pause": ("player_queues/play_pause", {"queue_id"}, set()),
     "next": ("player_queues/next", {"queue_id"}, set()),
@@ -24,6 +35,11 @@ COMMANDS: dict[str, tuple[str, set[str], set[str]]] = {
     "move_item": ("player_queues/move_item", {"queue_id", "queue_item_id"}, {"pos_shift"}),
     "delete_item": ("player_queues/delete_item", {"queue_id", "item_id_or_index"}, set()),
     "clear": ("player_queues/clear", {"queue_id"}, set()),
+    "play_media": (
+        "player_queues/play_media",
+        {"queue_id", "media"},
+        {"option", "radio_mode", "start_item"},
+    ),
     "volume_set": ("players/cmd/volume_set", {"player_id", "volume_level"}, set()),
     "group": ("players/cmd/group", {"player_id", "target_player"}, set()),
     "ungroup": ("players/cmd/ungroup", {"player_id"}, set()),
@@ -109,6 +125,77 @@ async def websocket_queue_items(hass: HomeAssistant, connection, msg: dict[str, 
 
 @websocket_api.websocket_command(
     {
+        vol.Required("type"): f"{DOMAIN}/library",
+        vol.Required("media_type"): vol.In(LIBRARY_COMMANDS),
+        vol.Optional("limit", default=30): int,
+        vol.Optional("offset", default=0): int,
+        vol.Optional("favorite"): bool,
+        vol.Optional("search"): str,
+    }
+)
+@websocket_api.async_response
+async def websocket_library(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
+    try:
+        args: dict[str, Any] = {"limit": msg["limit"], "offset": msg["offset"]}
+        if "favorite" in msg:
+            args["favorite"] = msg["favorite"]
+        if "search" in msg:
+            args["search"] = msg["search"]
+        result = await _get_mass(hass).send_command(
+            LIBRARY_COMMANDS[msg["media_type"]],
+            **args,
+        )
+        connection.send_result(msg["id"], result)
+    except Exception as err:  # noqa: BLE001
+        _send_error(connection, msg, err)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/search",
+        vol.Required("query"): str,
+        vol.Optional("limit", default=12): int,
+        vol.Optional("library_only", default=False): bool,
+    }
+)
+@websocket_api.async_response
+async def websocket_search(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
+    try:
+        result = await _get_mass(hass).send_command(
+            "music/search",
+            search_query=msg["query"],
+            media_types=SEARCH_MEDIA_TYPES,
+            limit=msg["limit"],
+            library_only=msg["library_only"],
+        )
+        connection.send_result(msg["id"], result)
+    except Exception as err:  # noqa: BLE001
+        _send_error(connection, msg, err)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/recently_played",
+        vol.Optional("limit", default=12): int,
+    }
+)
+@websocket_api.async_response
+async def websocket_recently_played(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
+    try:
+        result = await _get_mass(hass).send_command(
+            "music/recently_played_items",
+            limit=msg["limit"],
+            media_types=RECENT_MEDIA_TYPES,
+            fully_played_only=False,
+            user_initiated_only=True,
+        )
+        connection.send_result(msg["id"], result)
+    except Exception as err:  # noqa: BLE001
+        _send_error(connection, msg, err)
+
+
+@websocket_api.websocket_command(
+    {
         vol.Required("type"): f"{DOMAIN}/command",
         vol.Required("action"): vol.In(COMMANDS),
         vol.Optional("args", default={}): dict,
@@ -142,5 +229,8 @@ def async_register_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_players)
     websocket_api.async_register_command(hass, websocket_queues)
     websocket_api.async_register_command(hass, websocket_queue_items)
+    websocket_api.async_register_command(hass, websocket_library)
+    websocket_api.async_register_command(hass, websocket_search)
+    websocket_api.async_register_command(hass, websocket_recently_played)
     websocket_api.async_register_command(hass, websocket_command)
     domain_data[DATA_WS_REGISTERED] = True
