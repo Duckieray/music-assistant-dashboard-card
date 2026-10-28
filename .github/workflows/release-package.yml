@@ -1,0 +1,33 @@
+name: Build HACS release package
+
+on:
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Syntax-check Home Assistant integration
+        run: python3 -m compileall -q custom_components/music_assistant_dashboard
+
+      - name: Build HACS package
+        run: bash scripts/build-hacs-package.sh
+
+      - name: Upload HACS package
+        uses: actions/upload-artifact@v4
+        with:
+          name: music_assistant_dashboard
+          path: music_assistant_dashboard.zip
+          if-no-files-found: error
