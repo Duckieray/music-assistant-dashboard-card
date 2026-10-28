@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag, for example v0.1.0
+        description: Release tag, for example v0.1.2
         required: true
-        default: v0.1.0
+        default: v0.1.2
 
 permissions:
   contents: write
@@ -40,16 +40,25 @@ jobs:
           python3 - <<'PY'
           import json
           import os
+          import re
           from pathlib import Path
 
           tag = os.environ["TAG"]
           expected = tag[1:] if tag.startswith("v") else tag
           manifest = json.loads(Path("custom_components/music_assistant_dashboard/manifest.json").read_text())
           package = json.loads(Path("package.json").read_text())
-          if manifest["version"] != expected or package["version"] != expected:
-              raise SystemExit(
-                  f"Version mismatch: tag={tag}, manifest={manifest['version']}, package={package['version']}"
-              )
+          const_text = Path("custom_components/music_assistant_dashboard/const.py").read_text()
+          match = re.search(r'^INTEGRATION_VERSION\s*=\s*["\']([^"\']+)["\']', const_text, re.MULTILINE)
+          frontend_version = match.group(1) if match else None
+
+          versions = {
+              "tag": expected,
+              "manifest": manifest["version"],
+              "package": package["version"],
+              "frontend_cache": frontend_version,
+          }
+          if len(set(versions.values())) != 1:
+              raise SystemExit("Version mismatch: " + ", ".join(f"{key}={value}" for key, value in versions.items()))
           PY
 
       - name: Publish GitHub release
