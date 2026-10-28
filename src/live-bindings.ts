@@ -12,7 +12,13 @@ import type { DashboardConfig, MediaItem, NavSection, Player, Track } from "./ty
  * these bindings will be folded into smaller first-class Lit components/stores.
  */
 
-type AnyCard = MusicAssistantDashboardCard & {
+/**
+ * Structural view of the prototype card used by this temporary binding layer.
+ * Do not intersect this with MusicAssistantDashboardCard: the prototype intentionally keeps
+ * several UI fields private, and redeclaring those private fields in an intersection causes
+ * TypeScript to reduce the intersection to `never`.
+ */
+type AnyCard = {
   config?: DashboardConfig;
   section: NavSection;
   playing: boolean;
@@ -32,6 +38,7 @@ type AnyCard = MusicAssistantDashboardCard & {
   livePlayers?: Player[];
   liveElapsedSeconds?: number;
   liveQueueId?: string;
+  isConnected: boolean;
   requestUpdate(): void;
 };
 
