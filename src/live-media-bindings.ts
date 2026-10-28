@@ -43,6 +43,7 @@ type RawSearchResults = {
 type MediaState = {
   loading: boolean;
   loaded: boolean;
+  attempted: boolean;
   error?: string;
   baseUrl?: string;
   albums: MediaItem[];
@@ -83,6 +84,7 @@ function newState(): MediaState {
   return {
     loading: false,
     loaded: false,
+    attempted: false,
     albums: [],
     artists: [],
     tracks: [],
@@ -188,8 +190,9 @@ function dedupe(items: MediaItem[]): MediaItem[] {
 async function loadCatalog(card: MediaCard): Promise<void> {
   if (!isBridgeCard(card)) return;
   const state = stateFor(card);
-  if (state.loading || state.loaded) return;
+  if (state.loading || state.loaded || state.attempted) return;
   state.loading = true;
+  state.attempted = true;
   state.error = undefined;
   card.requestUpdate();
 
