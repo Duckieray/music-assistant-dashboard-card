@@ -2,6 +2,9 @@ name: Validate and build
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - .github/build-trigger
 
 jobs:
   build:
@@ -19,12 +22,17 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Typecheck and build
+      - name: Typecheck and build frontend
         run: npm run build
 
-      - name: Upload Home Assistant card
+      - name: Syntax-check Home Assistant integration
+        run: python3 -m compileall -q custom_components/music_assistant_dashboard
+
+      - name: Upload Home Assistant bundle
         uses: actions/upload-artifact@v4
         with:
-          name: music-assistant-dashboard-card
-          path: dist/music-assistant-dashboard-card.js
+          name: music-assistant-dashboard
+          path: |
+            dist/music-assistant-dashboard-card.js
+            custom_components/music_assistant_dashboard/**
           if-no-files-found: error
