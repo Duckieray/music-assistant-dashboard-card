@@ -29,6 +29,8 @@ For the normal HACS / Marketplace installation, see the intentionally simple gui
 
 **[Installation & troubleshooting](docs/INSTALLATION.md)**
 
+The installation guide is written as a five-step flow and includes marked screenshot positions. The final screenshots will be captured from the clean HACS release-candidate install so they exactly match the UI users will see rather than using mockups.
+
 The default card configuration is only:
 
 ```yaml
@@ -125,7 +127,8 @@ Before each public release/submission:
 4. Run **Build HACS release package** manually.
 5. Publish a GitHub Release with `music_assistant_dashboard.zip` attached.
 6. Test a clean install through HACS as a custom Integration repository.
-7. Submit the repository to `hacs/default` once the clean-install test and documentation screenshots are complete.
+7. Capture the real install/troubleshooting screenshots listed in `docs/INSTALLATION.md`.
+8. Submit the repository to `hacs/default` once the clean-install test and screenshots are complete.
 
 The Actions workflows intentionally use manual triggers so ordinary pushes do not consume Actions minutes.
 
