@@ -1,12 +1,12 @@
 {
   "domain": "music_assistant_dashboard",
   "name": "Music Assistant Dashboard",
+  "after_dependencies": ["lovelace"],
   "codeowners": ["@Duckieray"],
   "config_flow": true,
   "dependencies": ["music_assistant"],
-  "after_dependencies": ["lovelace"],
   "documentation": "https://github.com/Duckieray/music-assistant-dashboard-card#readme",
-  "issue_tracker": "https://github.com/Duckieray/music-assistant-dashboard-card/issues",
   "iot_class": "local_push",
+  "issue_tracker": "https://github.com/Duckieray/music-assistant-dashboard-card/issues",
   "version": "0.1.0"
 }
