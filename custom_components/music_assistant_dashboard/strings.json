@@ -1,0 +1,18 @@
+{
+  "title": "Music Assistant Dashboard",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Music Assistant Dashboard",
+        "description": "Connect the dashboard bridge to an existing Music Assistant integration.",
+        "data": {
+          "music_assistant_entry_id": "Music Assistant instance"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Music Assistant Dashboard is already configured.",
+      "music_assistant_not_found": "Set up Music Assistant in Home Assistant first, then add Music Assistant Dashboard."
+    }
+  }
+}
