@@ -13,14 +13,7 @@ from homeassistant.core import HomeAssistant, callback
 from .const import DATA_ENTRIES, DATA_WS_REGISTERED, DOMAIN
 
 
-LIBRARY_COMMANDS = {
-    "album": "music/albums/library_items",
-    "artist": "music/artists/library_items",
-    "track": "music/tracks/library_items",
-    "playlist": "music/playlists/library_items",
-    "radio": "music/radios/library_items",
-}
-
+MUSIC_ASSISTANT_DOMAIN = "music_assistant"
 SEARCH_MEDIA_TYPES = ["artist", "album", "track", "playlist", "radio"]
 RECENT_MEDIA_TYPES = ["track", "album", "playlist", "radio"]
 
@@ -49,17 +42,45 @@ COMMANDS: dict[str, tuple[str, set[str], set[str]]] = {
 }
 
 
-def _get_mass(hass: HomeAssistant):
+def _get_mass_entry_id(hass: HomeAssistant) -> str:
     domain_data = hass.data.get(DOMAIN, {})
     entries = domain_data.get(DATA_ENTRIES, {})
     if not entries:
         raise RuntimeError("Music Assistant Dashboard is not configured")
-    music_assistant_entry_id = next(iter(entries.values()))
-    return get_music_assistant_client(hass, music_assistant_entry_id)
+    return next(iter(entries.values()))
+
+
+def _get_mass(hass: HomeAssistant):
+    return get_music_assistant_client(hass, _get_mass_entry_id(hass))
+
+
+async def _call_mass_action(
+    hass: HomeAssistant,
+    action: str,
+    data: dict[str, Any],
+) -> dict[str, Any]:
+    """Call the public Home Assistant Music Assistant action and return its response."""
+    response = await hass.services.async_call(
+        MUSIC_ASSISTANT_DOMAIN,
+        action,
+        data,
+        blocking=True,
+        return_response=True,
+    )
+    if response is None:
+        return {}
+    if not isinstance(response, dict):
+        raise RuntimeError(f"Unexpected Music Assistant {action} response: {type(response).__name__}")
+    return response
 
 
 def _send_error(connection, msg: dict[str, Any], err: Exception) -> None:
-    connection.send_error(msg["id"], "music_assistant_dashboard_error", str(err))
+    detail = str(err) or repr(err)
+    connection.send_error(
+        msg["id"],
+        "music_assistant_dashboard_error",
+        f"{type(err).__name__}: {detail}",
+    )
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/info"})
@@ -126,7 +147,7 @@ async def websocket_queue_items(hass: HomeAssistant, connection, msg: dict[str, 
 @websocket_api.websocket_command(
     {
         vol.Required("type"): f"{DOMAIN}/library",
-        vol.Required("media_type"): vol.In(LIBRARY_COMMANDS),
+        vol.Required("media_type"): vol.In(SEARCH_MEDIA_TYPES),
         vol.Optional("limit", default=30): int,
         vol.Optional("offset", default=0): int,
         vol.Optional("favorite"): bool,
@@ -135,17 +156,23 @@ async def websocket_queue_items(hass: HomeAssistant, connection, msg: dict[str, 
 )
 @websocket_api.async_response
 async def websocket_library(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
+    """Return library items through HA's stable Music Assistant action surface."""
     try:
-        args: dict[str, Any] = {"limit": msg["limit"], "offset": msg["offset"]}
+        data: dict[str, Any] = {
+            "config_entry_id": _get_mass_entry_id(hass),
+            "media_type": msg["media_type"],
+            "limit": msg["limit"],
+            "offset": msg["offset"],
+        }
         if "favorite" in msg:
-            args["favorite"] = msg["favorite"]
+            data["favorite"] = msg["favorite"]
         if "search" in msg:
-            args["search"] = msg["search"]
-        result = await _get_mass(hass).send_command(
-            LIBRARY_COMMANDS[msg["media_type"]],
-            **args,
-        )
-        connection.send_result(msg["id"], result)
+            data["search"] = msg["search"]
+        response = await _call_mass_action(hass, "get_library", data)
+        items = response.get("items", [])
+        if not isinstance(items, list):
+            raise RuntimeError("Music Assistant get_library returned an invalid items payload")
+        connection.send_result(msg["id"], items)
     except Exception as err:  # noqa: BLE001
         _send_error(connection, msg, err)
 
@@ -160,15 +187,20 @@ async def websocket_library(hass: HomeAssistant, connection, msg: dict[str, Any]
 )
 @websocket_api.async_response
 async def websocket_search(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
+    """Search through HA's stable Music Assistant action surface."""
     try:
-        result = await _get_mass(hass).send_command(
-            "music/search",
-            search_query=msg["query"],
-            media_types=SEARCH_MEDIA_TYPES,
-            limit=msg["limit"],
-            library_only=msg["library_only"],
+        response = await _call_mass_action(
+            hass,
+            "search",
+            {
+                "config_entry_id": _get_mass_entry_id(hass),
+                "name": msg["query"],
+                "media_type": SEARCH_MEDIA_TYPES,
+                "limit": msg["limit"],
+                "library_only": msg["library_only"],
+            },
         )
-        connection.send_result(msg["id"], result)
+        connection.send_result(msg["id"], response)
     except Exception as err:  # noqa: BLE001
         _send_error(connection, msg, err)
 
