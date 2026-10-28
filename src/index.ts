@@ -10,4 +10,22 @@ installLiveMediaBindings();
 installArtworkBindings();
 installGroupingBindings();
 
+type CustomCardRegistry = Array<{
+  type: string;
+  name: string;
+  description: string;
+  preview?: boolean;
+}>;
+
+const registryHost = window as unknown as { customCards?: CustomCardRegistry };
+registryHost.customCards ??= [];
+if (!registryHost.customCards.some((card) => card.type === "music-assistant-dashboard")) {
+  registryHost.customCards.push({
+    type: "music-assistant-dashboard",
+    name: "Music Assistant Dashboard",
+    description: "A full-featured Music Assistant dashboard with player control, library browsing, queue management, and multi-room audio.",
+    preview: true,
+  });
+}
+
 export { MusicAssistantDashboardCard } from "./music-assistant-dashboard-card";
