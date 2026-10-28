@@ -4,6 +4,8 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import CONF_MUSIC_ASSISTANT_ENTRY_ID, DATA_ENTRIES, DOMAIN
+from .frontend import async_register_frontend
+from .http import async_register_http
 from .websocket import async_register_websocket
 
 
@@ -12,7 +14,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     domain_data = hass.data.setdefault(DOMAIN, {})
     entries = domain_data.setdefault(DATA_ENTRIES, {})
     entries[entry.entry_id] = entry.data[CONF_MUSIC_ASSISTANT_ENTRY_ID]
+
     async_register_websocket(hass)
+    async_register_http(hass)
+    await async_register_frontend(hass)
     return True
 
 
