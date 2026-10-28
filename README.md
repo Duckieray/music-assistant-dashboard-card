@@ -4,6 +4,8 @@ A polished, full-screen Music Assistant experience for Home Assistant.
 
 Music Assistant Dashboard ships as a Home Assistant custom integration **and** its Lovelace frontend in one package. It reuses Home Assistant's authenticated Music Assistant connection, so normal users do not need to expose a Music Assistant token or server URL to the browser.
 
+[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Duckieray&repository=music-assistant-dashboard-card&category=integration)
+
 > **Release status:** v0.1.0 release candidate. Player/queue control, library browsing, search, artwork, and multi-room grouping are live. Favorites, drag-and-drop queue reorder, and deeper recommendation/provider views are still evolving.
 
 ## Features
@@ -24,6 +26,10 @@ Music Assistant Dashboard ships as a Home Assistant custom integration **and** i
 - HACS release packaging
 
 ## Installation
+
+### Install with HACS
+
+[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Duckieray&repository=music-assistant-dashboard-card&category=integration)
 
 For the normal HACS / Marketplace installation, see the intentionally simple guide:
 
