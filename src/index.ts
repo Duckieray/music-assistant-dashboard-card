@@ -3,12 +3,14 @@ import { installGroupingBindings } from "./grouping-bindings";
 import { installHomeAssistantBridgeBindings } from "./ha-bridge-bindings";
 import { installLiveBindings } from "./live-bindings";
 import { installLiveMediaBindings } from "./live-media-bindings";
+import { installPolishBindings } from "./polish-bindings";
 
 installLiveBindings();
 installHomeAssistantBridgeBindings();
 installLiveMediaBindings();
 installArtworkBindings();
 installGroupingBindings();
+installPolishBindings();
 
 type CustomCardRegistry = Array<{
   type: string;
