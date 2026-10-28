@@ -1,0 +1,10 @@
+{
+  "domain": "music_assistant_dashboard",
+  "name": "Music Assistant Dashboard",
+  "codeowners": ["@Duckieray"],
+  "config_flow": true,
+  "dependencies": ["music_assistant"],
+  "documentation": "https://github.com/Duckieray/music-assistant-dashboard-card",
+  "iot_class": "local_push",
+  "version": "0.1.0"
+}
