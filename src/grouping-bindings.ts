@@ -3,9 +3,22 @@ import { MusicAssistantDashboardCard } from "./music-assistant-dashboard-card";
 import type { DashboardConfig, Player } from "./types";
 
 const BRIDGE_ADDRESS = "ha-music-assistant-dashboard-bridge";
+const SET_MEMBERS_FEATURE = "set_members";
 
 type BridgeHass = {
   callWS<T>(message: Record<string, unknown>): Promise<T>;
+};
+
+type RawPlayer = {
+  player_id: string;
+  name: string;
+  display_name?: string;
+  available: boolean;
+  volume_level?: number | null;
+  supported_features?: string[];
+  group_members?: string[];
+  can_group_with?: string[];
+  synced_to?: string | null;
 };
 
 type GroupCard = {
@@ -21,8 +34,24 @@ type GroupCard = {
 
 type CardPrototype = Record<string, unknown>;
 
+type TopologyState = {
+  loaded: boolean;
+  loading?: Promise<void>;
+  players: Map<string, RawPlayer>;
+};
+
 const pending = new WeakMap<GroupCard, Set<string>>();
 const errors = new WeakMap<GroupCard, string>();
+const topologyStates = new WeakMap<GroupCard, TopologyState>();
+
+function topologyFor(card: GroupCard): TopologyState {
+  let state = topologyStates.get(card);
+  if (!state) {
+    state = { loaded: false, players: new Map<string, RawPlayer>() };
+    topologyStates.set(card, state);
+  }
+  return state;
+}
 
 function isBridgeCard(card: GroupCard): boolean {
   return card.liveMode === true
@@ -33,8 +62,12 @@ function isBridgeCard(card: GroupCard): boolean {
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (error && typeof error === "object") {
-    const value = error as { message?: unknown; code?: unknown };
+    const value = error as { message?: unknown; code?: unknown; error?: unknown };
     if (typeof value.message === "string") return value.message;
+    if (value.error && typeof value.error === "object") {
+      const nested = value.error as { message?: unknown };
+      if (typeof nested.message === "string") return nested.message;
+    }
     try {
       return JSON.stringify(error);
     } catch {
@@ -42,6 +75,13 @@ function errorMessage(error: unknown): string {
     }
   }
   return String(error);
+}
+
+function isUnsupportedFeature(error: unknown): boolean {
+  const message = errorMessage(error).toLocaleLowerCase();
+  return message.includes("unsupportedfeaturedexception")
+    || message.includes("feature is not supported")
+    || message.includes("feature not supported");
 }
 
 function selectedLeader(card: GroupCard): Player | undefined {
@@ -58,57 +98,137 @@ function isMember(leader: Player, candidate: Player): boolean {
     || Boolean(leader.groupMembers?.includes(candidate.id));
 }
 
-async function callGroupCommand(
+function supportsEditableGroup(card: GroupCard, leader: Player | undefined): boolean {
+  if (!leader) return false;
+  return topologyFor(card).players.get(leader.id)?.supported_features?.includes(SET_MEMBERS_FEATURE) === true;
+}
+
+function canGroupWith(card: GroupCard, leader: Player | undefined, candidate: Player): boolean {
+  if (!leader) return false;
+  if (isMember(leader, candidate)) return true;
+  const rawLeader = topologyFor(card).players.get(leader.id);
+  return rawLeader?.can_group_with?.includes(candidate.id) === true;
+}
+
+function applyTopology(card: GroupCard, rawPlayers: RawPlayer[]): void {
+  const state = topologyFor(card);
+  state.players = new Map(rawPlayers.map((player) => [player.player_id, player]));
+
+  const existing = new Map((card.livePlayers ?? []).map((player) => [player.id, player]));
+  card.livePlayers = rawPlayers.map((raw) => {
+    const previous = existing.get(raw.player_id);
+    const groupMembers = raw.group_members ?? [];
+    return {
+      id: raw.player_id,
+      name: raw.display_name || raw.name || previous?.name || raw.player_id,
+      room: previous?.room || raw.name || "",
+      volume: raw.volume_level ?? previous?.volume ?? 0,
+      active: raw.player_id === card.playerId,
+      grouped: Boolean(raw.synced_to) || groupMembers.length > 1,
+      available: raw.available,
+      syncedTo: raw.synced_to ?? null,
+      groupMembers,
+      canGroupWith: raw.can_group_with ?? [],
+    };
+  });
+}
+
+async function refreshTopology(card: GroupCard): Promise<void> {
+  if (!card.hass?.callWS) return;
+  const state = topologyFor(card);
+  if (state.loading) return state.loading;
+
+  state.loading = card.hass.callWS<RawPlayer[]>({
+    type: "music_assistant_dashboard/players",
+  }).then((rawPlayers) => {
+    applyTopology(card, rawPlayers);
+    state.loaded = true;
+  }).finally(() => {
+    state.loading = undefined;
+    card.requestUpdate();
+  });
+
+  card.requestUpdate();
+  return state.loading;
+}
+
+async function setMembers(
   card: GroupCard,
-  action: "group_many" | "ungroup",
-  args: Record<string, unknown>,
+  leaderId: string,
+  add: string[] = [],
+  remove: string[] = [],
 ): Promise<void> {
   if (!card.hass?.callWS) return;
   await card.hass.callWS({
     type: "music_assistant_dashboard/command",
-    action,
-    args,
+    action: "set_members",
+    args: {
+      target_player: leaderId,
+      ...(add.length ? { player_ids_to_add: add } : {}),
+      ...(remove.length ? { player_ids_to_remove: remove } : {}),
+    },
   });
 }
 
-async function toggleMember(card: GroupCard, leader: Player, candidate: Player): Promise<void> {
-  if (candidate.id === leader.id) return;
+async function mutateMember(card: GroupCard, candidateId: string): Promise<void> {
   let current = pending.get(card);
   if (!current) {
     current = new Set<string>();
     pending.set(card, current);
   }
-  if (current.has(candidate.id)) return;
-  current.add(candidate.id);
+  if (current.has(candidateId)) return;
+  current.add(candidateId);
   errors.delete(card);
   card.requestUpdate();
 
-  const grouped = isMember(leader, candidate);
   try {
-    if (grouped) {
-      await callGroupCommand(card, "ungroup", { player_id: candidate.id });
-    } else {
-      await callGroupCommand(card, "group_many", {
-        target_player: leader.id,
-        child_player_ids: [candidate.id],
-      });
+    // Re-read MA immediately before changing topology. Sonos may briefly expose stale
+    // grouping capabilities after startup/reload, which was causing first-click failures.
+    await refreshTopology(card);
+
+    let leader = selectedLeader(card);
+    let candidate = card.livePlayers?.find((player) => player.id === candidateId);
+    if (!leader || !candidate || candidate.id === leader.id) return;
+
+    let grouped = isMember(leader, candidate);
+    if (!supportsEditableGroup(card, leader)) {
+      throw new Error("Music Assistant has not reported editable grouping for this player yet.");
+    }
+    if (!grouped && !canGroupWith(card, leader, candidate)) {
+      throw new Error(`${candidate.name} is not currently reported as compatible with ${leader.name}.`);
     }
 
-    // Optimistic state while the normal live-player poll catches up with MA.
-    if (grouped) {
-      candidate.syncedTo = null;
-      candidate.grouped = false;
-      leader.groupMembers = (leader.groupMembers ?? []).filter((id) => id !== candidate.id);
-    } else {
-      candidate.syncedTo = leader.id;
-      candidate.grouped = true;
-      leader.groupMembers = Array.from(new Set([...(leader.groupMembers ?? []), leader.id, candidate.id]));
-      leader.grouped = true;
+    const execute = () => grouped
+      ? setMembers(card, leader!.id, [], [candidate!.id])
+      : setMembers(card, leader!.id, [candidate!.id], []);
+
+    try {
+      await execute();
+    } catch (error) {
+      if (!isUnsupportedFeature(error)) throw error;
+
+      // One retry only, after forcing a fresh topology read. This handles the short window
+      // where MA/Sonos has registered the player but has not finished publishing capabilities.
+      await refreshTopology(card);
+      leader = selectedLeader(card);
+      candidate = card.livePlayers?.find((player) => player.id === candidateId);
+      if (!leader || !candidate || candidate.id === leader.id) return;
+      grouped = isMember(leader, candidate);
+
+      if (!supportsEditableGroup(card, leader) || (!grouped && !canGroupWith(card, leader, candidate))) {
+        throw new Error("Music Assistant is still initializing grouping for these speakers. Reopen Rooms & grouping and try again.");
+      }
+
+      await (grouped
+        ? setMembers(card, leader.id, [], [candidate.id])
+        : setMembers(card, leader.id, [candidate.id], []));
     }
+
+    await refreshTopology(card);
   } catch (error) {
     errors.set(card, errorMessage(error));
   } finally {
-    current.delete(candidate.id);
+    current.delete(candidateId);
     card.requestUpdate();
   }
 }
@@ -126,10 +246,14 @@ export function installGroupingBindings(): void {
     if (!this.groupOpen) return nothing;
     if (!isBridgeCard(this)) return originalRenderGroupDialog.call(this);
 
+    const topology = topologyFor(this);
+    if (!topology.loaded && !topology.loading) void refreshTopology(this);
+
     const players = this.livePlayers ?? [];
     const leader = selectedLeader(this);
     const busy = pending.get(this) ?? new Set<string>();
     const error = errors.get(this);
+    const leaderEditable = supportsEditableGroup(this, leader);
 
     return html`
       <div class="modal-backdrop" @click=${() => { this.groupOpen = false; }}>
@@ -145,8 +269,14 @@ export function installGroupingBindings(): void {
           ${leader ? html`
             <p style="margin:0 0 12px;color:var(--secondary-text-color,#a7adbd);font-size:13px;line-height:1.45">
               Playing from <strong style="color:var(--primary-text-color,#fff)">${leader.name}</strong>.
-              Check another room to group it with this player. Click a room name to make it the dashboard's selected player.
+              Click a room name to select it. Use the checkbox only to add or remove compatible speakers from the group.
             </p>
+          ` : nothing}
+
+          ${topology.loading ? html`
+            <div style="margin:0 0 12px;color:var(--secondary-text-color,#a7adbd);font-size:12px">
+              Checking speaker compatibility…
+            </div>
           ` : nothing}
 
           ${error ? html`
@@ -160,23 +290,52 @@ export function installGroupingBindings(): void {
               const grouped = leader ? isMember(leader, player) : false;
               const isLeader = player.id === leader?.id;
               const isBusy = busy.has(player.id);
+              const compatible = leader ? canGroupWith(this, leader, player) : false;
+              const groupingAvailable = topology.loaded
+                && leaderEditable
+                && (grouped || compatible)
+                && player.available !== false;
+              const checkboxDisabled = isLeader || isBusy || !groupingAvailable;
+              const status = !player.available
+                ? "Unavailable"
+                : player.id === this.playerId
+                  ? "Selected"
+                  : grouped
+                    ? "Grouped"
+                    : topology.loading || !topology.loaded
+                      ? "Checking compatibility…"
+                      : compatible
+                        ? "Available to group"
+                        : "Not group-compatible";
+              const title = isLeader
+                ? "Group leader"
+                : grouped
+                  ? `Remove ${player.name} from group`
+                  : compatible
+                    ? `Group ${player.name} with ${leader?.name ?? "selected player"}`
+                    : `${player.name} cannot currently be grouped with ${leader?.name ?? "selected player"}`;
+
               return html`
                 <div class=${player.id === this.playerId ? "room-row selected" : "room-row"}>
                   <button
                     class="check"
-                    ?disabled=${isLeader || isBusy || !player.available}
-                    title=${isLeader ? "Group leader" : grouped ? `Remove ${player.name} from group` : `Group ${player.name}`}
-                    @click=${() => { if (leader) void toggleMember(this, leader, player); }}
+                    ?disabled=${checkboxDisabled}
+                    title=${title}
+                    @click=${() => { if (!checkboxDisabled) void mutateMember(this, player.id); }}
                   >${isBusy ? "…" : grouped ? "✓" : ""}</button>
 
                   <button class="room-copy" @click=${() => {
+                    // Selecting a room never mutates a group.
                     this.playerId = player.id;
                     this.livePlayers = players.map((candidate) => ({ ...candidate, active: candidate.id === player.id }));
                     this.volume = player.volume;
+                    errors.delete(this);
+                    topology.loaded = false;
                     this.requestUpdate();
+                    void refreshTopology(this);
                   }}>
                     <strong>${player.name}${isLeader ? " • Leader" : ""}</strong>
-                    <span>${!player.available ? "Unavailable" : grouped ? "Grouped" : "Available"}</span>
+                    <span>${status}</span>
                   </button>
 
                   <input
@@ -203,7 +362,7 @@ export function installGroupingBindings(): void {
           </div>
 
           <div class="dialog-actions">
-            <button class="secondary-action" @click=${() => { this.groupOpen = false; }}>Close</button>
+            <button class="secondary-action" @click=${() => { void refreshTopology(this); }}>Refresh</button>
             <button class="primary-action" @click=${() => { this.groupOpen = false; }}>Done</button>
           </div>
         </div>
