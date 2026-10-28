@@ -1,0 +1,54 @@
+export type NavSection = "listen" | "library" | "playlists" | "radio" | "search";
+
+export interface Player {
+  id: string;
+  name: string;
+  room: string;
+  volume: number;
+  active: boolean;
+  grouped: boolean;
+  available?: boolean;
+  syncedTo?: string | null;
+  groupMembers?: string[];
+}
+
+export interface Track {
+  id: string;
+  title: string;
+  artist: string;
+  album: string;
+  duration: string;
+  accent: string;
+  secondary: string;
+  durationSeconds?: number;
+  queueIndex?: number;
+  queueItemId?: string;
+  imageUrl?: string;
+}
+
+export interface MediaItem {
+  id: string;
+  title: string;
+  subtitle: string;
+  kind: "playlist" | "album" | "radio" | "artist";
+  accent: string;
+  secondary: string;
+}
+
+export interface DashboardConfig {
+  type: string;
+  title?: string;
+  demo?: boolean;
+  default_player?: string;
+  /** Music Assistant server address. Accepts http(s)://host:port or ws(s)://host:port/ws. */
+  server_url?: string;
+  /** Compatibility alias for server_url. */
+  url?: string;
+  /** Music Assistant access token created under Settings → Authentication. */
+  token?: string;
+}
+
+export interface HomeAssistantLike {
+  themes?: { darkMode?: boolean };
+  callService?: (domain: string, service: string, data?: Record<string, unknown>) => Promise<unknown>;
+}
