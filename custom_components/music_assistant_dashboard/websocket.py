@@ -45,6 +45,11 @@ COMMANDS: dict[str, tuple[str, set[str], set[str]]] = {
     "ungroup": ("players/cmd/ungroup", {"player_id"}, set()),
     "group_many": ("players/cmd/group_many", {"target_player", "child_player_ids"}, set()),
     "ungroup_many": ("players/cmd/ungroup_many", {"player_ids"}, set()),
+    "set_members": (
+        "players/cmd/set_members",
+        {"target_player"},
+        {"player_ids_to_add", "player_ids_to_remove"},
+    ),
     "transfer": ("player_queues/transfer", {"source_queue_id", "target_queue_id"}, {"auto_play"}),
 }
 
