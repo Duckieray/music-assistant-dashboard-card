@@ -147,9 +147,18 @@ Home Assistant and browsers cache frontend modules aggressively.
 
 1. Restart Home Assistant.
 2. Hard-refresh the browser (`Ctrl+Shift+R` / `Cmd+Shift+R`).
-3. On mobile, fully close and reopen the Home Assistant app.
+3. Open **Settings → Dashboards → Resources** and confirm there is only one Music Assistant Dashboard resource.
+4. Keep the packaged resource beginning with:
 
-The integration versions its registered frontend resource so normal HACS upgrades should invalidate the old file automatically.
+   `/music-assistant-dashboard/music-assistant-dashboard-card.js`
+
+5. Remove any legacy development resource beginning with:
+
+   `/local/music-assistant-dashboard-card.js`
+
+6. On mobile, fully close and reopen the Home Assistant app.
+
+A legacy `/local/` module can load first and claim the custom element before the packaged HACS frontend loads, which makes an old UI appear even after a successful update. Starting with v0.1.3, storage-managed Lovelace installations automatically remove that legacy resource during integration startup.
 
 ## Still stuck?
 
