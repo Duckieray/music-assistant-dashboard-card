@@ -36,7 +36,8 @@ type CardPrototype = Record<string, unknown>;
 
 type TopologyState = {
   loaded: boolean;
-  loading?: Promise<void>;
+  attempted: boolean;
+  loading?: Promise<boolean>;
   players: Map<string, RawPlayer>;
 };
 
@@ -48,7 +49,7 @@ const dialogOpenStates = new WeakMap<GroupCard, boolean>();
 function topologyFor(card: GroupCard): TopologyState {
   let state = topologyStates.get(card);
   if (!state) {
-    state = { loaded: false, players: new Map<string, RawPlayer>() };
+    state = { loaded: false, attempted: false, players: new Map<string, RawPlayer>() };
     topologyStates.set(card, state);
   }
   return state;
@@ -134,19 +135,22 @@ function applyTopology(card: GroupCard, rawPlayers: RawPlayer[]): void {
   });
 }
 
-async function refreshTopology(card: GroupCard): Promise<void> {
-  if (!card.hass?.callWS) return;
+async function refreshTopology(card: GroupCard): Promise<boolean> {
+  if (!card.hass?.callWS) return false;
   const state = topologyFor(card);
-  if (state.loading) {
-    await state.loading;
-    return;
-  }
+  if (state.loading) return state.loading;
 
+  state.attempted = true;
   const loading = card.hass.callWS<RawPlayer[]>({
     type: "music_assistant_dashboard/players",
   }).then((rawPlayers) => {
     applyTopology(card, rawPlayers);
     state.loaded = true;
+    return true;
+  }).catch((error: unknown) => {
+    state.loaded = false;
+    errors.set(card, `Unable to refresh speaker status: ${errorMessage(error)}`);
+    return false;
   }).finally(() => {
     state.loading = undefined;
     card.requestUpdate();
@@ -154,7 +158,7 @@ async function refreshTopology(card: GroupCard): Promise<void> {
 
   state.loading = loading;
   card.requestUpdate();
-  await loading;
+  return loading;
 }
 
 async function setMembers(
@@ -202,7 +206,7 @@ async function mutateMember(card: GroupCard, candidateId: string): Promise<void>
   try {
     // Re-read MA immediately before changing topology. Sonos may briefly expose stale
     // grouping capabilities after startup/reload, which can cause first-click failures.
-    await refreshTopology(card);
+    if (!await refreshTopology(card)) return;
 
     let leader = selectedLeader(card);
     let candidate = card.livePlayers?.find((player) => player.id === candidateId);
@@ -224,7 +228,7 @@ async function mutateMember(card: GroupCard, candidateId: string): Promise<void>
       // One retry only, after forcing a fresh topology read. If the first command actually
       // succeeded despite the transient error, the fresh topology already reflects the desired
       // state and we intentionally do not send the inverse operation.
-      await refreshTopology(card);
+      if (!await refreshTopology(card)) return;
       leader = selectedLeader(card);
       candidate = card.livePlayers?.find((player) => player.id === candidateId);
       if (!leader || !candidate || candidate.id === leader.id) return;
@@ -269,11 +273,10 @@ export function installGroupingBindings(): void {
     if (!wasOpen) {
       dialogOpenStates.set(this, true);
       topology.loaded = false;
+      topology.attempted = false;
       errors.delete(this);
-      void refreshTopology(this);
-    } else if (!topology.loaded && !topology.loading) {
-      void refreshTopology(this);
     }
+    if (!topology.attempted && !topology.loading) void refreshTopology(this);
 
     const players = this.livePlayers ?? [];
     const leader = selectedLeader(this);
@@ -328,13 +331,15 @@ export function installGroupingBindings(): void {
                   ? "Selected"
                   : grouped
                     ? "Grouped"
-                    : topology.loading || !topology.loaded
+                    : topology.loading || !topology.attempted
                       ? "Checking compatibility…"
-                      : !leaderEditable
-                        ? "Grouping unavailable"
-                        : compatible
-                          ? "Available to group"
-                          : "Not group-compatible";
+                      : !topology.loaded
+                        ? "Compatibility unavailable"
+                        : !leaderEditable
+                          ? "Grouping unavailable"
+                          : compatible
+                            ? "Available to group"
+                            : "Not group-compatible";
               const title = isLeader
                 ? "Group leader"
                 : grouped
@@ -359,8 +364,8 @@ export function installGroupingBindings(): void {
                     this.volume = player.volume;
                     errors.delete(this);
                     topology.loaded = false;
+                    topology.attempted = false;
                     this.requestUpdate();
-                    void refreshTopology(this);
                   }}>
                     <strong>${player.name}${isLeader ? " • Leader" : ""}</strong>
                     <span>${status}</span>
@@ -392,7 +397,9 @@ export function installGroupingBindings(): void {
           <div class="dialog-actions">
             <button class="secondary-action" @click=${() => {
               topology.loaded = false;
-              void refreshTopology(this);
+              topology.attempted = false;
+              errors.delete(this);
+              this.requestUpdate();
             }}>Refresh</button>
             <button class="primary-action" @click=${() => { this.groupOpen = false; }}>Done</button>
           </div>
