@@ -2,7 +2,6 @@
   "domain": "music_assistant_dashboard",
   "name": "Music Assistant Dashboard",
   "after_dependencies": ["lovelace"],
-  "categories": ["media_entertainment.music_radio_services"],
   "codeowners": ["@Duckieray"],
   "config_flow": true,
   "dependencies": ["music_assistant"],
