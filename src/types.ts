@@ -30,9 +30,16 @@ export interface MediaItem {
   id: string;
   title: string;
   subtitle: string;
-  kind: "playlist" | "album" | "radio" | "artist";
+  kind: "playlist" | "album" | "radio" | "artist" | "track";
   accent: string;
   secondary: string;
+  /** Music Assistant URI used for playback, e.g. apple_music://playlist/... */
+  uri?: string;
+  /** Original Music Assistant media type. */
+  mediaType?: string;
+  /** Resolved artwork URL when available. */
+  imageUrl?: string;
+  favorite?: boolean;
 }
 
 export interface DashboardConfig {
@@ -51,4 +58,5 @@ export interface DashboardConfig {
 export interface HomeAssistantLike {
   themes?: { darkMode?: boolean };
   callService?: (domain: string, service: string, data?: Record<string, unknown>) => Promise<unknown>;
+  callWS?: <T>(message: Record<string, unknown>) => Promise<T>;
 }
