@@ -19,6 +19,14 @@ _LOGGER = logging.getLogger(__name__)
 RESOURCE_PATH = "/music-assistant-dashboard/music-assistant-dashboard-card.js"
 RESOURCE_URL = f"{RESOURCE_PATH}?v={INTEGRATION_VERSION}"
 
+# Development builds before the HACS packaging existed were installed manually at
+# /config/www and registered through /local. If that resource remains, it can load
+# first and claim the custom element before the packaged frontend does, leaving users
+# stuck on an old UI even after a successful HACS upgrade.
+LEGACY_RESOURCE_PATHS = {
+    "/local/music-assistant-dashboard-card.js",
+}
+
 
 async def async_register_frontend(hass: HomeAssistant) -> None:
     """Serve the bundled card and register it as a Lovelace module."""
@@ -52,12 +60,24 @@ async def async_register_frontend(hass: HomeAssistant) -> None:
     resources = lovelace.resources
     if not isinstance(resources, ResourceStorageCollection):
         _LOGGER.info(
-            "Lovelace resources are YAML-managed. Add %s as a module resource to your Lovelace YAML.",
+            "Lovelace resources are YAML-managed. Add %s as a module resource to your Lovelace YAML "
+            "and remove any legacy /local/music-assistant-dashboard-card.js resource.",
             RESOURCE_URL,
         )
         return
 
     await resources.async_get_info()
+
+    # Remove the legacy manually registered resource before registering/updating the
+    # packaged resource. customElements cannot be redefined, so leaving the old module
+    # around can make an old build win purely because it loaded first.
+    for item in list(resources.async_items()):
+        url = str(item.get(CONF_URL, ""))
+        base_url = url.split("?", 1)[0]
+        if base_url in LEGACY_RESOURCE_PATHS:
+            await resources.async_delete_item(item[CONF_ID])
+            _LOGGER.info("Removed legacy Music Assistant Dashboard resource %s", url)
+
     existing = next(
         (
             item
