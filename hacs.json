@@ -1,0 +1,7 @@
+{
+  "name": "Music Assistant Dashboard",
+  "zip_release": true,
+  "filename": "music_assistant_dashboard.zip",
+  "hide_default_branch": true,
+  "homeassistant": "2026.10.0"
+}
